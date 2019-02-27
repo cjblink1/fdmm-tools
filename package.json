@@ -14,5 +14,13 @@
   "bin": {
     "regen": "./regenerateVisitor.js"
   },
-  "devDependencies": {}
+  "devDependencies": {},
+  "repository": {
+    "type": "git",
+    "url": "git+ssh://git@github.com/cjblink1/fdmm-tools.git"
+  },
+  "bugs": {
+    "url": "https://github.com/cjblink1/fdmm-tools/issues"
+  },
+  "homepage": "https://github.com/cjblink1/fdmm-tools#readme"
 }
