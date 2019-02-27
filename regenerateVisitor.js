@@ -90,9 +90,9 @@ const mergeOldVisitorContentsIfOldVisitorExists = (visitorFile, callback) => {
 
 const mergeOldVisitorContentsIfDifferent = (visitorFile, callback) => {
     const oldVisitorFile = `${visitorFile}.old`;
-    const oldVisitor = { lines: [], functions: new Map() };
-    const visitor = { lines: [], functions: new Map() };
-    const mergedVisitor = { lines: [], functions: new Map() };
+    const oldVisitor = { lines: [], functions: new Map(), imports: new Set() };
+    const visitor = { lines: [], functions: new Map(), imports: new Set() };
+    const mergedVisitor = { lines: [], functions: new Map(), imports: new Set() };
     async.waterfall([
         (callback) => parseVisitor(oldVisitorFile, oldVisitor, callback),
         (callback) => parseVisitor(visitorFile, visitor, callback),
@@ -107,7 +107,8 @@ const parseVisitor = (file, visitor, callback) => {
         }
         async.waterfall([
             (callback) => parseVisitorLines(data, visitor, callback),
-            (callback) => populateVisitorFunctions(visitor, callback)
+            (callback) => populateVisitorFunctions(visitor, callback),
+            (callback) => populateVisitorImports(visitor, callback)
         ], callback);
     });
 }
@@ -132,6 +133,16 @@ const populateVisitorFunctions = (visitor, callback) => {
     }, callback);
 }
 
+const populateVisitorImports = (visitor, callback) => {
+    async.filter(visitor.lines, (line, callback) =>  callback(null, line.includes('require(')),
+    (err, importLines) => {
+        async.eachSeries(importLines, (importLine, callback) => {
+            visitor.imports.add(importLine);
+            callback(null);
+        }, callback)
+    });
+}
+
 const getFunctionBody = (visitor, currentIndex, callback) => {
     let functionBody = [];
     let numBraces = 0;
@@ -153,6 +164,7 @@ const mergeAndGenerateIfDifferent = (visitorFile, oldVisitor, visitor, mergedVis
         console.log(`Merging old visitor and new visitor`);
         async.waterfall([
             (callback) => mergeFunctions(oldVisitor, visitor, mergedVisitor, callback),
+            (callback) => mergeImports(oldVisitor, visitor, mergedVisitor, callback),
             (callback) => mergeLines(visitor, mergedVisitor, callback),
             (callback) => generateVisitorFile(visitorFile, mergedVisitor, callback)
         ], callback);
@@ -160,12 +172,9 @@ const mergeAndGenerateIfDifferent = (visitorFile, oldVisitor, visitor, mergedVis
 }
 
 const equalVisitors = (v0, v1, callback) => {
-    if (v0.functions.size !== v1.functions.size) return callback(false);
-    for (let [functionName, functionBody] of v0.functions.entries()) {
-        if (!v1.functions.has(functionName)) return callback(false);
-        for (let [index, line] of functionBody.entries()) {
-            if (line !== v1.functions.get(functionName)[index]) return callback(false);
-        };
+    if (v0.lines.size !== v1.lines.size) return callback(false);
+    for ([index, line] of v0.lines) {
+        if (line != v1.lines[index]) return callback(false);
     }
     callback(true);
 }
@@ -181,8 +190,17 @@ const mergeFunctions = (oldVisitor, visitor, mergedVisitor, callback) => {
     }, callback);
 }
 
+const mergeImports = (oldVisitor, visitor, mergedVisitor, callback) => {
+    mergedVisitor.imports = new Set(oldVisitor.imports);
+    async.eachSeries(visitor.imports, (importLine, callback) => {
+       mergedVisitor.imports.add(importLine); 
+       callback(null);
+    }, callback);
+}
+
 const mergeLines = (visitor, mergedVisitor, callback) => {
-    for (let line of visitor.lines) mergedVisitor.lines.push(line);
+    for (line of visitor.lines) mergedVisitor.lines.push(line);
+    Array.prototype.splice.apply(mergedVisitor.lines, [2, 1].concat(Array.from(mergedVisitor.imports.values())));
     for (let i = mergedVisitor.lines.length - 1; i >= 0; i--) {
         const currentLine = mergedVisitor.lines[i];
         if (currentLine.includes('function(ctx)')) {
